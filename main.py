@@ -36,12 +36,23 @@ class SchlageLock(Accessory):
 
         self.lock_uuid = uuid
 
-        self.lock_mechanism = self.add_preload_service("LockMechanism")
-        self.lock_target_state = self.lock_mechanism.get_characteristic("LockTargetState")
-        self.lock_current_state = self.lock_mechanism.get_characteristic("LockCurrentState")
+        # Lock mechanism
+        self.lock_service = self.add_preload_service("LockMechanism")
+
+        self.lock_target_state = self.lock_service.get_characteristic("LockTargetState")
+        self.lock_current_state = self.lock_service.get_characteristic("LockCurrentState")
 
         self.lock_target_state.setter_callback = self.handle_state_update
         self.lock_current_state.getter_callback = self.get_actual_state
+
+        # Battery
+        self.battery_service = self.add_preload_service("BatteryService")
+
+        self.battery_level = self.battery_service.get_characteristic("BatteryLevel")
+        self.battery_status = self.battery_service.get_characteristic("StatusLowBattery")
+
+        self.battery_level.getter_callback = self.get_battery_level
+        self.battery_status.getter_callback = self.get_battery_status
 
     def handle_state_update(self, value):
         """Callback for when HomeKit requests lock state to change"""
@@ -80,6 +91,16 @@ class SchlageLock(Accessory):
 
         print("HomeKit queried us for state...")
         return 1 if get_lock_by_uuid(self.lock_uuid).is_locked else 0
+
+    def get_battery_level(self):
+        """Callback for when HomeKit queries current battery state"""
+
+        return get_lock_by_uuid(self.lock_uuid).battery_level
+
+    def get_battery_status(self):
+        """Callback to check battery status (1 = low, 0 = normal)"""
+        return get_lock_by_uuid(self.lock_uuid).battery_level
+        return 1 if get_lock_by_uuid(self.lock_uuid).battery_level < 25 else 0
 
 
 def get_lock_by_uuid(uuid):
