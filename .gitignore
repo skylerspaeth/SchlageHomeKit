@@ -1,3 +1,8 @@
+# HAP-python
+accessory.state
+
+# --- BEGIN GITHUB-PROVIDED .gitignore ---
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
