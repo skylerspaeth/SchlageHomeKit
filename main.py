@@ -1,9 +1,22 @@
+# Builtins
 import logging, os
 
+# HAP-python
 from pyhap.accessory import Accessory, Bridge
 from pyhap.accessory_driver import AccessoryDriver
 from pyhap.const import CATEGORY_DOOR_LOCK
 
+# Pyschlage
+from pyschlage import Auth, Schlage
+
+# Read Schlage creds from environment variables
+if None in [os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_PASS')]:
+    raise ValueError("Missing env var SCHLAGE_USER or SCHLAGE_PASS.")
+
+# Create a Schlage object and authenticate with your credentials.
+schlage = Schlage(Auth(os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_PASS')))
+
+# Define logging style
 logging.basicConfig(level=logging.INFO, format="[%(module)s] %(message)s")
 
 class SchlageLock(Accessory):
@@ -23,10 +36,10 @@ class SchlageLock(Accessory):
     def lock_changed(self, value):
         """Callback for when HomeKit requests lock state to change"""
 
-        if value == 1:
-            print("Locking the door...")
-        else:
+        if value == 0:
             print("Unlocking the door...")
+        else:
+            print("Locking the door...")
 
         # Update the current state to reflect the change
         self.lock_current_state.set_value(value)
@@ -37,8 +50,8 @@ def get_bridge(driver):
     bridge = Bridge(driver, 'Schlage Locks Bridge')
 
     # Add a lock to bridge for each one found in user's Schlage account
-    for lock_name in ["MyTestLock"]:
-        new_lock = SchlageLock(driver, lock_name)
+    for lock in schlage.locks():
+        new_lock = SchlageLock(driver, lock.name)
         bridge.add_accessory(new_lock)
 
     return bridge
