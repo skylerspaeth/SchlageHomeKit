@@ -6,13 +6,15 @@ from pyhap.const import CATEGORY_DOOR_LOCK
 
 logging.basicConfig(level=logging.INFO, format="[%(module)s] %(message)s")
 
+lock_name = os.environ.get('SCHLAGE_HOMEKIT_LOCK_NAME', 'My Lock')
+
 class SchlageLock(Accessory):
     """Wrapper for dknowles2's pyschlage library"""
 
     category = CATEGORY_DOOR_LOCK
 
-    def __init__(self, driver, name=os.environ.get('SCHLAGE_HOMEKIT_LOCK_NAME', 'My Lock')):
-        super().__init__(driver, name)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         self.lock_mechanism = self.add_preload_service("LockMechanism")
         self.lock_target_state = self.lock_mechanism.get_characteristic("LockTargetState")
@@ -30,11 +32,12 @@ class SchlageLock(Accessory):
         # Update the current state to reflect the change
         self.lock_current_state.set_value(value)
 
-def main():
-    driver = AccessoryDriver(port=51826)
-    lock = SchlageLock(driver)
-    driver.add_accessory(accessory=lock)
-    driver.start()
+# Setup the accessory on port 51826
+driver = AccessoryDriver(port=51826)
 
-if __name__ == "__main__":
-    main()
+lock = SchlageLock(driver, "MyTempLock")
+
+driver.add_accessory(accessory=lock)
+
+# Start it!
+driver.start()
