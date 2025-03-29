@@ -34,6 +34,7 @@ class SchlageLock(Accessory):
 
         super().__init__(*args, **kwargs)
 
+        # Used to look up matching lock in API when a HomeKit request comes in
         self.lock_uuid = uuid
 
         # Lock mechanism
