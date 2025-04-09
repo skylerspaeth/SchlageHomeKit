@@ -2,11 +2,22 @@ import json
 import logging
 import signal
 import sys
+import os
 
 from pyhap.accessory_driver import AccessoryDriver
 
 from accessory import Lock
 from service import Service
+
+# Pyschlage
+from pyschlage import Auth, Schlage
+
+# Verify Schlage creds env vars are present
+if None in [os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_PASS')]:
+    raise ValueError("Missing env var SCHLAGE_USER or SCHLAGE_PASS.")
+
+# Create a Schlage object and authenticate with supplied creds
+schlage = Schlage(Auth(os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_PASS')))
 
 def configure_logging():
     log = logging.getLogger()
@@ -23,6 +34,7 @@ def configure_hap_accessory():
         driver,
         "Lock",
         service=Service,
+        schlage_lock=schlage.locks()[0],
         lock_state_at_startup=int(True)
     )
     driver.add_accessory(accessory=accessory)

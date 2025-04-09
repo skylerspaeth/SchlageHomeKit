@@ -1,5 +1,6 @@
 import functools
 import logging
+import time
 
 from pyhap.accessory import Accessory
 from pyhap.const import CATEGORY_DOOR_LOCK
@@ -8,17 +9,17 @@ from service import Service
 
 log = logging.getLogger()
 
-# Lock class performs no logic, forwarding requests to Service class
 class Lock(Accessory):
     category = CATEGORY_DOOR_LOCK
 
-    def __init__(self, *args, service: Service, lock_state_at_startup=1, **kwargs):
+    def __init__(self, *args, service: Service, schlage_lock, lock_state_at_startup=1, **kwargs):
         super().__init__(*args, **kwargs)
         self._last_client_public_keys = None
 
         self._lock_target_state = lock_state_at_startup
         self._lock_current_state = lock_state_at_startup
 
+        self.schlage_lock = schlage_lock
         self.service = service
         self.service.on_endpoint_authenticated = self.on_endpoint_authenticated
         self.add_lock_service()
@@ -89,7 +90,8 @@ class Lock(Accessory):
 
     def get_lock_current_state(self):
         log.info("get_lock_current_state")
-        return self._lock_current_state
+        return self.schlage_lock.is_locked
+        # return self._lock_current_state
 
     def get_lock_target_state(self):
         log.info("get_lock_target_state")
@@ -97,8 +99,31 @@ class Lock(Accessory):
 
     def set_lock_target_state(self, value):
         log.info(f"set_lock_target_state {value}")
-        self._lock_target_state = self._lock_current_state = value
+
+        self._lock_target_state = value
+
+        # Try setting the physical lock
+        self.schlage_lock.lock() if bool(value) else self.schlage_lock.unlock()
+
+        # Wait lock_timeout seconds for state to be as desired otherwise assume request won't be processed
+        timeout_end_time = time.time() + 10
+        while time.time() < timeout_end_time:
+            time.sleep(2) # Re-check state every 2 seconds
+
+            current_state = int(self.schlage_lock.is_locked)
+
+            if current_state == value:
+                # Update the current state to reflect the change
+                self._lock_current_state = int(self.schlage_lock.is_locked)
+                self.lock_current_state.set_value(self._lock_current_state, should_notify=True)
+                print(self.schlage_lock.lock_state_metadata)
+                print("Updated the state successfully.")
+                return self._lock_current_state
+
+        print(f"WARNING: Waited {lock_timeout} seconds for lock to change state but no change was observed. Skipping request...")
+        self._lock_current_state = int(self.schlage_lock.is_locked)
         self.lock_current_state.set_value(self._lock_current_state, should_notify=True)
+
         return self._lock_target_state
 
     # All methods down here are forwarded to Service
