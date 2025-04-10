@@ -58,6 +58,15 @@ def main():
                 value=0
             )
 
+        def add_info_service(self):
+            """Callback for when HomeKit requests lock accessory information"""
+
+            serv_info = self.driver.loader.get_service("AccessoryInformation")
+            serv_info.configure_char("Name", value=self.display_name)
+            serv_info.configure_char("Manufacturer", value="Schlage")
+            serv_info.configure_char("Model", value="Wi-Fi Lock")
+            serv_info.configure_char("SerialNumber", value=self.lock_uuid)
+            self.add_service(serv_info)
 
         def handle_state_update(self, desired_state):
             """Callback for when HomeKit requests lock state to change"""
