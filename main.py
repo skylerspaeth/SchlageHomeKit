@@ -1,5 +1,6 @@
 # Builtins
 import logging, os, time
+logger = logging.getLogger(__name__)
 
 # HAP-python
 from pyhap.accessory import Accessory, Bridge
@@ -13,116 +14,126 @@ from pyschlage import Auth, Schlage
 if None in [os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_PASS')]:
     raise ValueError("Missing env var SCHLAGE_USER or SCHLAGE_PASS.")
 
-# Create a Schlage object and authenticate with supplied creds
-schlage = Schlage(Auth(os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_PASS')))
-
 # Max number of seconds to wait for lock to perform an update
-lock_timeout = 20
+lock_timeout = 5
 
 # Define logging style
 logging.basicConfig(level=logging.INFO, format="[%(module)s] %(message)s")
 
-class SchlageLock(Accessory):
-    """Door lock from user's Schlage account"""
+def main():
+    # Create a Schlage object and authenticate with supplied creds
+    schlage = Schlage(Auth(os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_PASS')))
 
-    category = CATEGORY_DOOR_LOCK
+    class SchlageLock(Accessory):
+        """Door lock from user's Schlage account"""
 
-    def __init__(self, *args, **kwargs):
-        # Args unexpected to HAP-python must be removed before calling super init
-        uuid = kwargs['uuid']
-        del kwargs['uuid']
+        category = CATEGORY_DOOR_LOCK
 
-        super().__init__(*args, **kwargs)
+        def __init__(self, *args, **kwargs):
+            # Used to look up matching lock in API when a HomeKit request comes in
+            self.lock_uuid = kwargs['uuid']
 
-        # Used to look up matching lock in API when a HomeKit request comes in
-        self.lock_uuid = uuid
+            # Args unexpected to HAP-python must be removed before calling super init
+            del kwargs['uuid']
 
-        lock_state_at_startup = 1
-        self._lock_target_state = lock_state_at_startup
-        self._lock_current_state = lock_state_at_startup
+            super().__init__(*args, **kwargs)
 
-        # Lock mechanism
-        self.lock_service = self.add_preload_service("LockMechanism")
+            lock_state_at_startup = self.get_actual_state()
+            self._lock_target_state = lock_state_at_startup
+            self._lock_current_state = lock_state_at_startup
 
-        self.lock_current_state = self.lock_service.configure_char(
-            "LockCurrentState",
-            getter_callback=self.get_actual_state,
-            value=0
-        )
+            # Lock mechanism
+            self.lock_service = self.add_preload_service("LockMechanism")
 
-        self.lock_target_state = self.lock_service.configure_char(
-            "LockTargetState",
-            getter_callback=lambda: self._lock_target_state,
-            setter_callback=self.handle_state_update,
-            value=0
-        )
+            self.lock_current_state = self.lock_service.configure_char(
+                "LockCurrentState",
+                getter_callback=self.get_actual_state,
+                value=0
+            )
+
+            self.lock_target_state = self.lock_service.configure_char(
+                "LockTargetState",
+                getter_callback=lambda: self._lock_target_state,
+                setter_callback=self.handle_state_update,
+                value=0
+            )
 
 
-    def handle_state_update(self, desired_state):
-        """Callback for when HomeKit requests lock state to change"""
+        def handle_state_update(self, desired_state):
+            """Callback for when HomeKit requests lock state to change"""
 
-        # Ack to prevent timeout
-        self.lock_target_state.set_value(desired_state)
-
-        lock = get_lock_by_uuid(self.lock_uuid)
-
-        if desired_state == 0:
-            print("Unlocking the door...")
-            lock.unlock()
-        else:
-            print("Locking the door...")
-            lock.lock()
-
-        # Wait lock_timeout seconds for state to be as desired otherwise assume request won't be processed
-        timeout_end_time = time.time() + lock_timeout
-        while time.time() < timeout_end_time:
-            time.sleep(2) # Re-check state every 2 seconds
+            # Ack to prevent timeout
+            self.lock_target_state.set_value(desired_state)
 
             lock = get_lock_by_uuid(self.lock_uuid)
-            state = 1 if lock.is_locked else 0
 
-            print(f"Current lock state: {state}, Target state: {desired_state}")
+            if desired_state == 0:
+                logger.info("Unlocking the door...")
+                lock.unlock()
+            else:
+                logger.info("Locking the door...")
+                lock.lock()
 
-            if state == desired_state:
-                # Update the current state to reflect the change
-                self.lock_current_state.set_value(state)
-                print("Updated the state successfully.")
-                return
+            # Wait lock_timeout seconds for state to be as desired otherwise assume request won't be processed
+            timeout_end_time = time.time() + lock_timeout
+            while time.time() < timeout_end_time:
+                lock = get_lock_by_uuid(self.lock_uuid)
+                state = int(lock.is_locked)
 
-        print(f"WARNING: Waited {lock_timeout} seconds for lock to change state but no change was observed. Skipping request...")
-        self.lock_current_state.set_value(desired_state)
+                logger.info(f"Current lock state: {state}, Target state: {desired_state}")
 
-    def get_actual_state(self):
-        """Callback for when HomeKit queries current, real-life lock state"""
+                if state == desired_state:
+                    # Update the current state to reflect the change
+                    self.lock_current_state.set_value(state)
+                    logger.info(f"Updated the state to {desired_state} successfully.")
+                    return
 
-        return 1 if get_lock_by_uuid(self.lock_uuid).is_locked else 0
+                time.sleep(1) # Re-check state every second
+
+            logger.warning(f"WARNING: Waited {lock_timeout} seconds for lock to change state but no change was observed. Skipping request...")
+            self.lock_current_state.set_value(desired_state)
+
+        def get_actual_state(self):
+            """Callback for when HomeKit queries current, real-life lock state"""
+            lock = get_lock_by_uuid(self.lock_uuid)
+
+            # 0: door unlocked (unsecured)
+            # 1: door locked   (secured)
+            # 2: lock jammed   (bruh)
+            state = 2 if lock.is_jammed else int(lock.is_locked)
+
+            logger.info(f"Current state according to Schlage: {state}")
+            return state
 
 
-def get_lock_by_uuid(uuid):
-    # Lookup lock by caller's UUID
-    for lock in schlage.locks():
-        if lock.device_id == uuid:
-            return lock
-        else:
-            raise ValueError(f"No lock found matching UUID {lock.device_id}, aborting!")
+    def get_lock_by_uuid(uuid):
+        # Lookup lock by caller's UUID
+        for lock in schlage.locks():
+            if lock.device_id == uuid:
+                return lock
+            else:
+                raise ValueError(f"No lock found matching UUID {lock.device_id}, aborting!")
 
-def get_bridge(driver):
-    """Generate a bridge which adds all detected locks"""
+    def get_bridge(driver):
+        """Generate a bridge which adds all detected locks"""
 
-    bridge = Bridge(driver, 'Schlage Locks Bridge')
+        bridge = Bridge(driver, 'Schlage Locks Bridge')
 
-    # Add a lock to bridge for each one found in user's Schlage account
-    for lock in schlage.locks():
-        new_lock = SchlageLock(driver, lock.name, uuid=lock.device_id)
-        bridge.add_accessory(new_lock)
+        # Add a lock to bridge for each one found in user's Schlage account
+        for lock in schlage.locks():
+            new_lock = SchlageLock(driver, lock.name, uuid=lock.device_id)
+            bridge.add_accessory(new_lock)
 
-    return bridge
+        return bridge
 
-# Setup the accessory on port 51826
-driver = AccessoryDriver(port=51826)
+    # Setup the accessory on port 51826
+    driver = AccessoryDriver(port=51826)
 
-# Add the bridge to list of accessories to broadcast
-driver.add_accessory(accessory=get_bridge(driver))
+    # Add the bridge to list of accessories to broadcast
+    driver.add_accessory(accessory=get_bridge(driver))
 
-# Start it!
-driver.start()
+    # Start it!
+    driver.start()
+
+if __name__ == '__main__':
+    main()
