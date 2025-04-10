@@ -1,11 +1,8 @@
-import json
-import logging
-import signal
-import sys
-import os
+# Python built-ins
+import json, logging, signal, sys, os
 
+# HAP-python
 from pyhap.accessory_driver import AccessoryDriver
-
 from accessory import Lock
 from service import Service
 
@@ -21,7 +18,7 @@ schlage = Schlage(Auth(os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_P
 
 def configure_logging():
     log = logging.getLogger()
-    formatter = logging.Formatter("[%(asctime)s] [%(levelname)8s] %(module)-18s:%(lineno)-4d %(message)s")
+    formatter = logging.Formatter("[%(asctime)s] [%(levelname)8s] %(module)-18s %(message)s")
     hdlr = logging.StreamHandler(sys.stdout)
     log.setLevel(20)
     hdlr.setFormatter(formatter)
@@ -32,10 +29,10 @@ def configure_hap_accessory():
     driver = AccessoryDriver(port=51926, persist_file="hap.state")
     accessory = Lock(
         driver,
-        "Lock",
+        "Lock", # used as display_name
         service=Service,
-        schlage_lock=schlage.locks()[0],
-        lock_state_at_startup=int(True)
+        schlage_auth=schlage,
+        lock_state_at_startup=int(schlage.locks()[0].is_locked)
     )
     driver.add_accessory(accessory=accessory)
     return driver, accessory
