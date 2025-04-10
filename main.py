@@ -15,7 +15,7 @@ if None in [os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_PASS')]:
     raise ValueError("Missing env var SCHLAGE_USER or SCHLAGE_PASS.")
 
 # Max number of seconds to wait for lock to perform an update
-lock_timeout = 5
+lock_timeout = 8
 
 # Define logging style
 logging.basicConfig(level=logging.INFO, format="[%(module)s] %(message)s")
@@ -77,29 +77,33 @@ def main():
             lock = get_lock_by_uuid(self.lock_uuid)
 
             if desired_state == 0:
-                logger.info("Unlocking the door...")
+                logger.info(f"Unlocking '{lock.name}'...")
                 lock.unlock()
             else:
-                logger.info("Locking the door...")
+                logger.info(f"Locking '{lock.name}'...")
                 lock.lock()
 
             # Wait lock_timeout seconds for state to be as desired otherwise assume request won't be processed
             timeout_end_time = time.time() + lock_timeout
             while time.time() < timeout_end_time:
+                # I'd like to just call get_actual_state here, but it hangs during un/lock if I do for some reason
                 lock = get_lock_by_uuid(self.lock_uuid)
-                state = int(lock.is_locked)
+                current_state = 2 if lock.is_jammed else int(lock.is_locked)
 
-                logger.info(f"Current lock state: {state}, Target state: {desired_state}")
+                logger.info(f"'{lock.name}' Current state: {current_state}, Target state: {desired_state}")
 
-                if state == desired_state:
+                if current_state == desired_state:
                     # Update the current state to reflect the change
-                    self.lock_current_state.set_value(state)
-                    logger.info(f"Updated the state to {desired_state} successfully.")
+                    self.lock_current_state.set_value(current_state)
+                    logger.info(f"Updated state of '{lock.name}' to {desired_state} successfully.")
                     return
 
                 time.sleep(1) # Re-check state every second
 
-            logger.warning(f"WARNING: Waited {lock_timeout} seconds for lock to change state but no change was observed. Skipping request...")
+            logger.warning(
+                f"WARNING: Waited {lock_timeout} seconds for lock to change state but no change was observed. " +
+                "Telling HomeKit to display our desired state anyways or else it will hang..."
+            )
             self.lock_current_state.set_value(desired_state)
 
         def get_actual_state(self):
@@ -135,7 +139,7 @@ def main():
 
         return bridge
 
-    # Setup the accessory on port 51826
+    # Setup the accessory on default port
     driver = AccessoryDriver(port=51826)
 
     # Add the bridge to list of accessories to broadcast
