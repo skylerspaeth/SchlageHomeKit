@@ -37,71 +37,65 @@ class SchlageLock(Accessory):
         # Used to look up matching lock in API when a HomeKit request comes in
         self.lock_uuid = uuid
 
+        lock_state_at_startup = 1
+        self._lock_target_state = lock_state_at_startup
+        self._lock_current_state = lock_state_at_startup
+
         # Lock mechanism
         self.lock_service = self.add_preload_service("LockMechanism")
 
-        self.lock_target_state = self.lock_service.get_characteristic("LockTargetState")
-        self.lock_current_state = self.lock_service.get_characteristic("LockCurrentState")
+        self.lock_current_state = self.lock_service.configure_char(
+            "LockCurrentState",
+            getter_callback=self.get_actual_state,
+            value=0
+        )
 
-        self.lock_target_state.setter_callback = self.handle_state_update
-        self.lock_current_state.getter_callback = self.get_actual_state
+        self.lock_target_state = self.lock_service.configure_char(
+            "LockTargetState",
+            getter_callback=lambda: self._lock_target_state,
+            setter_callback=self.handle_state_update,
+            value=0
+        )
 
-        # Battery
-        self.battery_service = self.add_preload_service("BatteryService")
 
-        self.battery_level = self.battery_service.get_characteristic("BatteryLevel")
-        self.battery_status = self.battery_service.get_characteristic("StatusLowBattery")
-
-        self.battery_level.getter_callback = self.get_battery_level
-        self.battery_status.getter_callback = self.get_battery_status
-
-    def handle_state_update(self, value):
+    def handle_state_update(self, desired_state):
         """Callback for when HomeKit requests lock state to change"""
+
+        # Ack to prevent timeout
+        self.lock_target_state.set_value(desired_state)
 
         lock = get_lock_by_uuid(self.lock_uuid)
 
-        if value == 0:
+        if desired_state == 0:
             print("Unlocking the door...")
             lock.unlock()
-            print("Request finished, re-quering state")
         else:
             print("Locking the door...")
             lock.lock()
-            print("Request finished, re-quering state")
 
         # Wait lock_timeout seconds for state to be as desired otherwise assume request won't be processed
         timeout_end_time = time.time() + lock_timeout
-        while True:
+        while time.time() < timeout_end_time:
             time.sleep(2) # Re-check state every 2 seconds
 
             lock = get_lock_by_uuid(self.lock_uuid)
             state = 1 if lock.is_locked else 0
 
-            if state == value:
+            print(f"Current lock state: {state}, Target state: {desired_state}")
+
+            if state == desired_state:
                 # Update the current state to reflect the change
                 self.lock_current_state.set_value(state)
                 print("Updated the state successfully.")
-                break
-            if time.time() > timeout_end_time:
-                print(f"WARNING: Waited {lock_timeout} seconds for lock to change state but no change was observed. Skipping request...")
-                break
-            print("Trying again...")
+                return
+
+        print(f"WARNING: Waited {lock_timeout} seconds for lock to change state but no change was observed. Skipping request...")
+        self.lock_current_state.set_value(desired_state)
 
     def get_actual_state(self):
         """Callback for when HomeKit queries current, real-life lock state"""
 
-        print("HomeKit queried us for state...")
         return 1 if get_lock_by_uuid(self.lock_uuid).is_locked else 0
-
-    def get_battery_level(self):
-        """Callback for when HomeKit queries current battery state"""
-
-        return get_lock_by_uuid(self.lock_uuid).battery_level
-
-    def get_battery_status(self):
-        """Callback to check battery status (1 = low, 0 = normal)"""
-        return get_lock_by_uuid(self.lock_uuid).battery_level
-        return 1 if get_lock_by_uuid(self.lock_uuid).battery_level < 25 else 0
 
 
 def get_lock_by_uuid(uuid):
