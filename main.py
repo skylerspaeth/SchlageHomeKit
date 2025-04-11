@@ -89,7 +89,7 @@ def main():
         def handle_state_update(self, desired_state):
             """Callback for when HomeKit requests lock state to change"""
 
-            # Ack to prevent timeout
+            # Acknowledge request to prevent timeout
             self._lock_target_state = desired_state
             self.lock_target_state.set_value(self._lock_target_state)
 
