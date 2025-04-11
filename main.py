@@ -1,6 +1,5 @@
 # Builtins
 import logging, os, time
-logger = logging.getLogger(__name__)
 
 # HAP-python
 from pyhap.accessory import Accessory, Bridge
@@ -17,8 +16,14 @@ if None in [os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_PASS')]:
 # Max number of seconds to wait for lock to perform an update
 lock_timeout = 8
 
-# Define logging style
+# Define global logging style
 logging.basicConfig(level=logging.INFO, format="[%(module)s] %(message)s")
+
+# Create a logger specific to this file
+logger = logging.getLogger(__name__)
+
+# Set a more conservative logger level for this file to prevent excess noise
+logger.setLevel(logging.WARNING)
 
 def main():
     # Create a Schlage object and authenticate with supplied creds
@@ -72,7 +77,8 @@ def main():
             """Callback for when HomeKit requests lock state to change"""
 
             # Ack to prevent timeout
-            self.lock_target_state.set_value(desired_state)
+            self._lock_target_state = desired_state
+            self.lock_target_state.set_value(self._lock_target_state)
 
             lock = get_lock_by_uuid(self.lock_uuid)
 
@@ -104,10 +110,12 @@ def main():
                 f"WARNING: Waited {lock_timeout} seconds for lock to change state but no change was observed. " +
                 "Telling HomeKit to display our desired state anyways or else it will hang..."
             )
-            self.lock_current_state.set_value(desired_state)
+            self._lock_current_state = desired_state
+            self.lock_current_state.set_value(self._lock_current_state)
 
         def get_actual_state(self):
             """Callback for when HomeKit queries current, real-life lock state"""
+
             lock = get_lock_by_uuid(self.lock_uuid)
 
             # 0: door unlocked (unsecured)
@@ -118,9 +126,28 @@ def main():
             logger.info(f"Current state according to Schlage: {state}")
             return state
 
+        @Accessory.run_at_interval(5)
+        def run(self):
+            """Poll physical status on a regular basis"""
+
+            current_state = self.get_actual_state()
+
+            # Avoids making unnecessary calls, but can be removed if causing issues
+            if current_state != self._lock_current_state:
+
+                # Update target state despite this being a reaction to physical change
+                # because without this, Home app will infinitely show "(un)locking..."
+                self._lock_target_state = current_state
+                self.lock_target_state.set_value(self._lock_target_state)
+
+                # Alert HomeKit that the state has changed
+                self._lock_current_state = current_state
+                self.lock_current_state.set_value(self._lock_current_state)
+
 
     def get_lock_by_uuid(uuid):
-        # Lookup lock by caller's UUID
+        """Lookup lock by UUID of caller SchlageLock instance"""
+
         for lock in schlage.locks():
             if lock.device_id == uuid:
                 return lock
@@ -132,7 +159,7 @@ def main():
 
         bridge = Bridge(driver, 'Schlage Locks Bridge')
 
-        # Add a lock to bridge for each one found in user's Schlage account
+        # Add a SchlageLock to bridge for each lock found in user's Schlage account
         for lock in schlage.locks():
             new_lock = SchlageLock(driver, lock.name, uuid=lock.device_id)
             bridge.add_accessory(new_lock)
