@@ -67,10 +67,14 @@ def main():
                 setter_callback=self.handle_state_update,
                 value=0
             )
-            self.battery_level = self.battery_service.get_characteristic("BatteryLevel")
-            self.battery_status = self.battery_service.get_characteristic("StatusLowBattery")
-            self.battery_level.getter_callback = self.get_battery_level
-            self.battery_status.getter_callback = self.get_battery_status
+            self.battery_level = self.battery_service.configure_char(
+                "BatteryLevel",
+                getter_callback=lambda: get_lock_by_uuid(self.lock_uuid).battery_level
+            )
+            self.battery_status = self.battery_service.configure_char(
+                "StatusLowBattery",
+                getter_callback=lambda: 1 if get_lock_by_uuid(self.lock_uuid).battery_level < low_battery_percent else 0
+            )
 
         def add_info_service(self):
             """Callback for when HomeKit requests lock accessory information"""
