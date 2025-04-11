@@ -43,19 +43,20 @@ def main():
 
             super().__init__(*args, **kwargs)
 
+            # Initialize the lock with its real life state
             lock_state_at_startup = self.get_actual_state()
             self._lock_target_state = lock_state_at_startup
             self._lock_current_state = lock_state_at_startup
 
-            # Lock mechanism
+            # Create the service to register characteristics onto
             self.lock_service = self.add_preload_service("LockMechanism")
 
+            # Configure how we'll interact with lock characteristics
             self.lock_current_state = self.lock_service.configure_char(
                 "LockCurrentState",
                 getter_callback=self.get_actual_state,
                 value=0
             )
-
             self.lock_target_state = self.lock_service.configure_char(
                 "LockTargetState",
                 getter_callback=lambda: self._lock_target_state,
