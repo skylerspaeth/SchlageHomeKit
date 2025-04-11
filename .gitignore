@@ -1,5 +1,6 @@
 # HAP-python
 accessory.state
+**/*.state
 
 # --- BEGIN GITHUB-PROVIDED .gitignore ---
 

@@ -1,9 +1,7 @@
-#!/bin/zsh
+# source this script like so to install packages and setup your virtual env when developing:
+# > source ./venv.sh
 
-# source this script to install packages and setup your virtual env when developing on macOS:
-# > `. ./venv.sh`
-
-# NOTE: you do not need to use this script when deploying! see readme for deploy process.
+# NOTE: you do not need to use this script when deploying! see README for deploy process
 
 mkdir -p venv
 python3 -m venv venv
