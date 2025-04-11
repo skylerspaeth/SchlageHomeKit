@@ -16,6 +16,9 @@ if None in [os.environ.get('SCHLAGE_USER'), os.environ.get('SCHLAGE_PASS')]:
 # Max number of seconds to wait for lock to perform an update
 lock_timeout = 8
 
+# Percentage at which the battery is considered "low" and HomeKit will be notified
+low_battery_percent = 25
+
 # Define global logging style
 logging.basicConfig(level=logging.INFO, format="[%(module)s] %(message)s")
 
@@ -48,10 +51,11 @@ def main():
             self._lock_target_state = lock_state_at_startup
             self._lock_current_state = lock_state_at_startup
 
-            # Create the service to register characteristics onto
+            # Create the services to register characteristics onto
             self.lock_service = self.add_preload_service("LockMechanism")
+            self.battery_service = self.add_preload_service("BatteryService")
 
-            # Configure how we'll interact with lock characteristics
+            # Configure how we'll interact with characteristics
             self.lock_current_state = self.lock_service.configure_char(
                 "LockCurrentState",
                 getter_callback=self.get_actual_state,
@@ -63,6 +67,10 @@ def main():
                 setter_callback=self.handle_state_update,
                 value=0
             )
+            self.battery_level = self.battery_service.get_characteristic("BatteryLevel")
+            self.battery_status = self.battery_service.get_characteristic("StatusLowBattery")
+            self.battery_level.getter_callback = self.get_battery_level
+            self.battery_status.getter_callback = self.get_battery_status
 
         def add_info_service(self):
             """Callback for when HomeKit requests lock accessory information"""
@@ -126,6 +134,16 @@ def main():
 
             logger.info(f"Current state according to Schlage: {state}")
             return state
+
+        def get_battery_level(self):
+            """Callback for when HomeKit queries current battery state"""
+
+            return get_lock_by_uuid(self.lock_uuid).battery_level
+
+        def get_battery_status(self):
+            """Callback to check battery status (1 = low, 0 = normal)"""
+
+            return 1 if get_lock_by_uuid(self.lock_uuid).battery_level < low_battery_percent else 0
 
         @Accessory.run_at_interval(5)
         def run(self):
