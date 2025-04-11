@@ -24,7 +24,7 @@ I *assume* it is compatible with any model of Schlage Wi-Fi locks in your accoun
 
 ## Security Note
 
-As of April 2024, Schlage still does not seem to support 2FA for their accounts. This is bad, and they need to support it, but
+As of April 2025, Schlage still does not seem to support 2FA for their accounts. This is bad, and they need to support it, but
 it means that you don't have to opt to disable it just to be able to use this accessory.
 
 That said, it's worth mentioning that by using this accessory, you are placing a lot of trust in a the security of a couple third parties:
